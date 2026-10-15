@@ -1,6 +1,6 @@
 
 
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { LanguageProvider } from './contexts/LanguageContext';
 import { RoleProvider } from './contexts/RoleContext';
 import { AuthProvider } from './contexts/AuthContext';
@@ -33,6 +33,7 @@ export default function App() {
                   <Toaster />
                   <Routes>
                     <Route path="/" element={<LoginPage />} />
+                    <Route path="/login" element={<Navigate to="/" replace />} />
                     <Route path="/cmu-callback" element={<CMUCallbackPage />} />
                     <Route path="/callback" element={<CMUCallbackPage />} />
                     <Route path="/auth/callback" element={<CMUCallbackPage />} />
@@ -45,6 +46,7 @@ export default function App() {
                     <Route path="/tickets/:id" element={<TicketDetailsPage />} />
                     <Route path="/building-staff" element={<BuildingStaffPage />} />
                     <Route path="/settings" element={<SettingsPage />} />
+                    <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>
                 </BrowserRouter>
               </NotificationProvider>
