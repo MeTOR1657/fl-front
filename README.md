@@ -20,53 +20,82 @@
 - React 19 และ TypeScript
 - Vite และ Tailwind CSS
 - React Router
-- Google OAuth via `@react-oauth/google`
-- CMU OAuth 2.0 และ Google Identity Services
+- Google OAuth ผ่าน backend
+- CMU OAuth 2.0 ผ่าน backend
 - Recharts, Lucide React และ Motion
 
-## ความต้องการของระบบ
+## ติดตั้งและเริ่มระบบ
 
-- Node.js 18 ขึ้นไป
-- npm
-- OAuth credentials หากต้องการทดสอบการเข้าสู่ระบบจริง
+ต้องมี Docker Desktop พร้อม Compose, Node.js 24 และ pnpm 11.9 สำหรับโหมดพัฒนา ให้เก็บโฟลเดอร์ `pf-front`, `pf-backend`, `pf-db` และ `pf-deploy` ไว้ระดับเดียวกัน
 
-## การติดตั้ง
+### วิธีแนะนำ: รันทั้งระบบด้วย Docker
 
-```bash
-git clone <repository-url>
-cd Fullstack
-npm install
+จาก PowerShell:
+
+```powershell
+cd ..\pf-deploy
+Copy-Item deploy.env.example .env   # ทำครั้งแรกเท่านั้น
 ```
 
-คัดลอกไฟล์ตัวแปรสภาพแวดล้อม:
+แก้ `.env` ตามหัวข้อ OAuth ด้านล่าง แล้วเริ่มระบบ:
 
-```bash
-copy .env.example .env
+```powershell
+docker compose up -d --build
+docker compose ps
 ```
 
-บน macOS หรือ Linux ใช้ `cp .env.example .env` จากนั้นแก้ค่าใน `.env` ให้ตรงกับ Google OAuth, CMU OAuth และ Backend API
+Compose จะเริ่ม PostgreSQL รอ health check รัน migration ของ backend แล้วเริ่ม frontend เปิด `http://localhost:6055` (มี port 3000 สำหรับ CMU callback) และตรวจสถานะฐานข้อมูลที่ `http://localhost:6055/api/health`
+
+```powershell
+docker compose logs -f backend
+docker compose down
+```
+
+### โหมดพัฒนา: รัน frontend/backend แยกกัน
+
+1. เริ่ม PostgreSQL จาก `pf-db` โดยตั้ง `.env` ให้เรียบร้อย:
+
+   ```powershell
+   cd ..\pf-db
+   Copy-Item .env.example .env   # ทำครั้งแรกเท่านั้น
+   docker compose up -d
+   ```
+
+2. ตั้งค่า `pf-backend/.env` ให้ `DATABASE_URL` ใช้ app user/password/database เดียวกับ `pf-db` และตั้ง callback ตามตารางด้านล่าง จากนั้น:
+
+   ```powershell
+   cd ..\pf-backend
+   pnpm install
+   pnpm run db:migrate
+   pnpm run dev
+   ```
+
+3. ตั้งค่า `pf-front/.env` ให้ `VITE_BACKEND_TARGET=http://localhost:3001` และ callback CMU เป็น `http://localhost:5173/api/auth/callback` จากนั้น:
+
+   ```powershell
+   cd ..\pf-front
+   npm install
+   npm run dev
+   ```
+
+เปิด `http://localhost:5173` โหมดนี้ใช้ PostgreSQL จาก Docker แต่รัน frontend และ backend บนเครื่อง
 
 ## ตัวแปรสภาพแวดล้อมที่สำคัญ
 
 | ตัวแปร | รายละเอียด |
 | --- | --- |
-| `VITE_API_BASE_URL` | URL ของ Backend API เช่น `http://localhost:5000` |
-| `VITE_CMU_OAUTH_CLIENT_ID` | Client ID สำหรับ CMU OAuth |
-| `CMU_OAUTH_CLIENT_SECRET` | Client Secret สำหรับ CMU OAuth |
-| `VITE_CMU_OAUTH_REDIRECT_URI` | URL สำหรับรับผลลัพธ์จาก CMU OAuth |
-| `VITE_GOOGLE_CLIENT_ID` | Google OAuth Client ID |
+| `VITE_BACKEND_TARGET` | Backend API สำหรับ Vite dev proxy เช่น `http://localhost:3001` |
+| `VITE_CMU_OAUTH_CLIENT_ID` | Public CMU OAuth Client ID |
+| `VITE_CMU_OAUTH_REDIRECT_URI` | CMU callback ต้องตรงกับ URL ที่ลงทะเบียนไว้ |
+| `DATABASE_URL` | ใช้ใน backend เท่านั้น: `localhost` เมื่อรันบนเครื่อง หรือ `db` เมื่ออยู่ใน Compose network |
+
+ตั้ง `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `CMU_OAUTH_CLIENT_ID`, `CMU_OAUTH_CLIENT_SECRET` และ `CMU_OAUTH_REDIRECT_URI` ใน `.env` ของ backend/deployment เท่านั้น ห้ามเก็บ secret หรือ `DATABASE_URL` ใน `pf-front/.env`
+
+สำหรับ Docker ให้ Google callback ตรงกับ `http://localhost:<FRONTEND_PORT>/auth/google/callback` และลงทะเบียน URI เดียวกันใน Google Cloud Console ส่วน CMU callback ของ deployment คือ `http://localhost:3000/api/auth/callback`; callback ของ development คือ `http://localhost:5173/api/auth/callback` ทั้งสอง URL ต้องลงทะเบียนกับ CMU OAuth โหมดพัฒนาใช้ Google callback `http://localhost:3001/auth/google/callback`
 
 ห้าม commit ไฟล์ `.env` หรือเปิดเผยค่า Client Secret ใน repository สาธารณะ
 
 ## การใช้งาน
-
-เริ่มโหมดพัฒนา:
-
-```bash
-npm run dev
-```
-
-เปิดเบราว์เซอร์ที่ [http://localhost:5173](http://localhost:5173)
 
 คำสั่งอื่นที่ใช้บ่อย:
 
@@ -105,9 +134,10 @@ src/
 
 ## หมายเหตุด้านการพัฒนา
 
-- Vite มี middleware สำหรับรับคำขอ `/api/cmu-oauth/callback` ระหว่างการพัฒนา เพื่อแลก Authorization Code กับ CMU OAuth
+- Backend เป็นผู้แลก Authorization Code ของ CMU และ Google OAuth และออก app token หลังตรวจสอบตัวตน
 - ข้อมูลบางส่วนใช้ Context และ Local Storage เพื่อรองรับการทดสอบบนเครื่องผู้พัฒนา
-- ก่อนนำไปใช้งานจริง ควรเชื่อมต่อ Backend, Database และระบบจัดการ Secret ที่ปลอดภัย
+- Compose deployment เชื่อม Frontend, Backend และ PostgreSQL เข้าด้วยกัน โดย Backend รัน migration ตอนเริ่มระบบ
+- OAuth Redirect URI ใน Google Cloud Console และ CMU OAuth ต้องตรงกับ URL สาธารณะที่เปิดใช้งานจริงทุกตัวอักษร
 - Redirect URI ที่ตั้งในผู้ให้บริการ OAuth ต้องตรงกับ URL ที่ใช้เปิดระบบ
 
 ## Build สำหรับ Production

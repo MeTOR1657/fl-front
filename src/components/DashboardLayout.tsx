@@ -302,7 +302,6 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                               <Link
                                 key={notification.id}
                                 to={url}
-                                href={url}
                                 onClick={(e) => handleNotificationClick(e, notification.id, url)}
                                 className={`p-4 flex gap-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors relative group block text-left ${
                                   notification.unread ? 'bg-blue-50/40 dark:bg-blue-950/20' : ''

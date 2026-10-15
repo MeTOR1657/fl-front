@@ -1,6 +1,7 @@
 
 
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
+import { getStoredCMUToken } from '../lib/cmuOAuth';
 
 
 export interface TicketItem {
@@ -303,23 +304,38 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return initialTicketsData;
   });
 
-  const API_URL = ((import.meta as any).env?.VITE_API_BASE_URL as string) || 'http://localhost:5000';
+  const API_URL = ((import.meta as any).env?.VITE_API_BASE_URL as string) || '';
 
+  const getAppToken = () => sessionStorage.getItem('google_access_token') || getStoredCMUToken();
+
+  const getAuthHeaders = (): Record<string, string> => {
+    const token = getAppToken();
+    return {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+  };
 
   useEffect(() => {
     let isMounted = true;
-    const hasLocal = typeof window !== 'undefined' && localStorage.getItem(STORAGE_KEY);
-    if (hasLocal) return;
 
     const loadFromApi = async () => {
       try {
+        const token = getAppToken();
+        const headers: Record<string, string> = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
         const res = await fetch(`${API_URL}/api/tickets`, {
-          signal: AbortSignal.timeout(1000),
+          headers,
+          signal: AbortSignal.timeout(3000),
         });
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data) && data.length > 0 && isMounted) {
             setTickets(data);
+            try {
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+            } catch {}
           }
         }
       } catch {
@@ -407,11 +423,29 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     fetch(`${API_URL}/api/tickets`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newTicket),
-    }).catch(() => {
-
-    });
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        building: input.building,
+        floor: input.floor,
+        room: input.room,
+        category: input.category,
+        description: input.description,
+        priority: input.priority || 'Medium',
+        photos: input.photos || [],
+        contactName: input.contactName || 'Supakorn (You)',
+        contactEmail: input.contactEmail || 'supakorn@cmu.ac.th',
+        contactPhone: input.contactPhone || '081-234-5678',
+      }),
+    })
+      .then(async (res) => {
+        if (res.ok) {
+          const created = await res.json();
+          if (created && created.id) {
+            setTickets((prev) => prev.map((t) => (t.id === id ? { ...t, ...created } : t)));
+          }
+        }
+      })
+      .catch(() => {});
 
     return newTicket;
   };
@@ -419,7 +453,7 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const updateTicket = (id: string, updates: Partial<TicketItem>) => {
     if (!id) return;
-    const cleanId = id.replace('#', '').trim().toLowerCase();
+    const cleanId = id.replace('#', '').trim();
 
 
     const finalUpdates: Partial<TicketItem> = { ...updates };
@@ -428,7 +462,7 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         finalUpdates.status = 'Completed';
       } else if (finalUpdates.progress < 100 && finalUpdates.progress > 0 && finalUpdates.status === undefined) {
 
-        const target = tickets.find((t) => t.id.toLowerCase() === cleanId || t.id.replace('#', '').toLowerCase() === cleanId);
+        const target = tickets.find((t) => t.id.toLowerCase() === cleanId.toLowerCase() || t.id.replace('#', '').toLowerCase() === cleanId.toLowerCase());
         if (target && target.status === 'Completed') {
           finalUpdates.status = 'In Progress';
         }
@@ -440,7 +474,7 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     setTickets((prev) => {
       const updated = prev.map((t) => {
-        const matches = t.id.toLowerCase() === cleanId || t.id.replace('#', '').toLowerCase() === cleanId;
+        const matches = t.id.toLowerCase() === cleanId.toLowerCase() || t.id.replace('#', '').toLowerCase() === cleanId.toLowerCase();
         return matches ? { ...t, ...finalUpdates } : t;
       });
       try {
@@ -452,15 +486,11 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     });
 
 
-    if (API_URL) {
-      fetch(`${API_URL}/api/tickets/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(finalUpdates),
-      }).catch(() => {
-
-      });
-    }
+    fetch(`${API_URL}/api/tickets/${cleanId}`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(finalUpdates),
+    }).catch(() => {});
   };
 
 

@@ -1,6 +1,3 @@
-
-
-
 export interface CMUUserInfo {
   cmuitaccount_name: string;
   cmuitaccount: string;
@@ -20,24 +17,22 @@ export interface CMUUserInfo {
   itaccounttype_EN?: string;
 }
 
-
 export interface CMUAuthConfig {
   clientId: string;
-  clientSecret: string;
   redirectUri: string;
   authUrl: string;
   scope: string;
 }
 
-
 export const DEFAULT_CMU_CLIENT_ID = 'MWM9PxVFyADkwn6pTSxbKlVbw4Fq7me2xzOGLqW4';
-export const DEFAULT_CMU_CLIENT_SECRET = 'hmYddTEV2GJr5MVXl2UaBIdjxGGpUPxJj86GFzUKgB2YH2Kdimn1vyxFF3UGWkX7HX6GQb9PTBV8FVE8ig7VFxZuWcTZwz8745REIqvaY8OH2tZmQEHhOECfOfx12DsQ';
-
 
 export const CPE_REGISTERED_REDIRECT_URIS = [
-  { group: 'localhost', label: 'Localhost - /api/auth/callback (แนะนำ)', url: 'http://localhost:5173/api/auth/callback' },
-  { group: 'localhost', label: 'Localhost - /callback', url: 'http://localhost:5173/callback' },
-  { group: 'localhost', label: 'Localhost - /auth/callback', url: 'http://localhost:5173/auth/callback' },
+  { group: 'localhost', label: 'Localhost (3000) - /api/auth/callback (แนะนำสำหรับ Docker)', url: 'http://localhost:3000/api/auth/callback' },
+  { group: 'localhost', label: 'Localhost (5173) - /api/auth/callback (แนะนำสำหรับ Dev)', url: 'http://localhost:5173/api/auth/callback' },
+  { group: 'localhost', label: 'Localhost (3000) - /callback', url: 'http://localhost:3000/callback' },
+  { group: 'localhost', label: 'Localhost (5173) - /callback', url: 'http://localhost:5173/callback' },
+  { group: 'localhost', label: 'Localhost (3000) - /auth/callback', url: 'http://localhost:3000/auth/callback' },
+  { group: 'localhost', label: 'Localhost (5173) - /auth/callback', url: 'http://localhost:5173/auth/callback' },
   { group: 'fsg11', label: 'FSG 11 - /auth/callback', url: 'https://fsg11.cpecmu.com/auth/callback' },
   { group: 'fsg12', label: 'FSG 12 - /callback', url: 'https://fsg12.cpecmu.com/callback' },
   { group: 'fsg12', label: 'FSG 12 - /auth/callback', url: 'https://fsg12.cpecmu.com/auth/callback' },
@@ -70,80 +65,81 @@ export const CPE_REGISTERED_REDIRECT_URIS = [
 
 const STORAGE_KEY_CONFIG = 'cmu_oauth_config';
 const STORAGE_KEY_USER = 'cmu_oauth_user_session';
+const STORAGE_KEY_TOKEN = 'cmu_oauth_access_token';
+const OAUTH_STATE_COOKIE = 'cmu_oauth_state';
 
 export const CPE_AUTH_AUTHORIZE_URL = 'https://oauth497.cpecmu.com/application/o/authorize/';
 export const CPE_AUTH_TOKEN_URL = 'https://oauth497.cpecmu.com/application/o/token/';
 export const CPE_AUTH_USERINFO_URL = 'https://oauth497.cpecmu.com/application/o/userinfo/';
 export const CPE_AUTH_DEFAULT_SCOPE = 'openid profile email basic_info';
 
-
 export function getCMUAuthConfig(): CMUAuthConfig {
-  const currentHost = typeof window !== 'undefined' ? window.location.hostname : '';
   const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
 
-  let defaultRedirect = 'http://localhost:5173/api/auth/callback';
-  if (currentHost.includes('cpecmu.com')) {
-    defaultRedirect = `${currentOrigin}/callback`;
-  } else if (currentHost.includes('localhost') || currentHost.includes('127.0.0.1')) {
-    defaultRedirect = 'http://localhost:5173/api/auth/callback';
-  } else {
-    defaultRedirect = 'http://localhost:5173/api/auth/callback';
-  }
+  const env = (import.meta as unknown as { env?: Record<string, string> }).env;
+  const defaultRedirect = env?.VITE_CMU_OAUTH_REDIRECT_URI ||
+    (currentOrigin ? `${currentOrigin}/api/auth/callback` : 'http://localhost:5173/api/auth/callback');
 
-  const envClientId = (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_CMU_OAUTH_CLIENT_ID || DEFAULT_CMU_CLIENT_ID;
-  const envClientSecret = (import.meta as unknown as { env?: Record<string, string> }).env?.CMU_OAUTH_CLIENT_SECRET || DEFAULT_CMU_CLIENT_SECRET;
+  const envClientId = env?.VITE_CMU_OAUTH_CLIENT_ID || DEFAULT_CMU_CLIENT_ID;
 
   try {
     const saved = localStorage.getItem(STORAGE_KEY_CONFIG);
     if (saved) {
       const parsed = JSON.parse(saved);
-
       const isOldAuthUrl = parsed.authUrl?.includes('oauth.cmu.ac.th');
       return {
-        clientId: parsed.clientId || envClientId,
-        clientSecret: parsed.clientSecret || envClientSecret,
-        redirectUri: parsed.redirectUri || defaultRedirect,
+        clientId: envClientId,
+        redirectUri: defaultRedirect,
         authUrl: isOldAuthUrl ? CPE_AUTH_AUTHORIZE_URL : (parsed.authUrl || CPE_AUTH_AUTHORIZE_URL),
         scope: isOldAuthUrl || !parsed.scope ? CPE_AUTH_DEFAULT_SCOPE : parsed.scope,
       };
     }
   } catch {
-
+    // ignore
   }
 
   return {
     clientId: envClientId,
-    clientSecret: envClientSecret,
     redirectUri: defaultRedirect,
     authUrl: CPE_AUTH_AUTHORIZE_URL,
     scope: CPE_AUTH_DEFAULT_SCOPE,
   };
 }
 
-
 export function saveCMUAuthConfig(config: Partial<CMUAuthConfig>) {
   const current = getCMUAuthConfig();
   const updated = { ...current, ...config };
+  delete (updated as CMUAuthConfig & { clientSecret?: string }).clientSecret;
+  updated.clientId = current.clientId;
   localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify(updated));
   return updated;
 }
-
 
 export function buildCMUAuthorizeUrl(customRedirectUri?: string): string {
   const config = getCMUAuthConfig();
   const redirectUri = customRedirectUri || config.redirectUri;
 
+  const state = crypto.randomUUID();
+  const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+  document.cookie = `${OAUTH_STATE_COOKIE}=${state}; Max-Age=600; Path=/; SameSite=Lax${secure}`;
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: config.clientId || DEFAULT_CMU_CLIENT_ID,
     redirect_uri: redirectUri,
     scope: config.scope || CPE_AUTH_DEFAULT_SCOPE,
-    state: Math.random().toString(36).substring(7),
+    state,
   });
 
   return `${config.authUrl}?${params.toString()}`;
 }
 
+export function consumeCMUOAuthState(): string | null {
+  const prefix = `${OAUTH_STATE_COOKIE}=`;
+  const value = document.cookie.split('; ').find((cookie) => cookie.startsWith(prefix))?.slice(prefix.length) || null;
+  const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+  document.cookie = `${OAUTH_STATE_COOKIE}=; Max-Age=0; Path=/; SameSite=Lax${secure}`;
+  return value;
+}
 
 export function isCMUStaff(user: CMUUserInfo): boolean {
   if (user.cmuitaccount === 'bimcub12345@cmu.ac.th' || user.cmuitaccount.includes('admin')) {
@@ -157,7 +153,6 @@ export function isCMUStaff(user: CMUUserInfo): boolean {
   }
   return false;
 }
-
 
 export const MOCK_CMU_ACCOUNTS: CMUUserInfo[] = [
   {
@@ -213,7 +208,6 @@ export const MOCK_CMU_ACCOUNTS: CMUUserInfo[] = [
   },
 ];
 
-
 export function getStoredCMUUser(): CMUUserInfo | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_USER);
@@ -223,7 +217,6 @@ export function getStoredCMUUser(): CMUUserInfo | null {
   }
 }
 
-
 export function storeCMUUser(user: CMUUserInfo | null) {
   if (user) {
     localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(user));
@@ -232,19 +225,36 @@ export function storeCMUUser(user: CMUUserInfo | null) {
   }
 }
 
+export function getStoredCMUToken(): string | null {
+  try {
+    return localStorage.getItem(STORAGE_KEY_TOKEN) || localStorage.getItem('app_jwt_token');
+  } catch {
+    return null;
+  }
+}
+
+export function storeCMUToken(token: string | null) {
+  if (token) {
+    localStorage.setItem(STORAGE_KEY_TOKEN, token);
+    localStorage.setItem('app_jwt_token', token);
+  } else {
+    localStorage.removeItem(STORAGE_KEY_TOKEN);
+    localStorage.removeItem('app_jwt_token');
+  }
+}
 
 export async function exchangeCMUCode(
   codeOrUrl: string,
   customRedirectUri?: string
-): Promise<{ success: boolean; user?: CMUUserInfo; error?: string }> {
+): Promise<{ success: boolean; user?: CMUUserInfo; accessToken?: string; error?: string }> {
   try {
+    const config = getCMUAuthConfig();
     let cleanCode = codeOrUrl.trim();
     if (!cleanCode) {
       return { success: false, error: 'กรุณาระบุ Authorization Code หรือ URL' };
     }
 
     let redirectUri = customRedirectUri || config.redirectUri;
-
 
     if (cleanCode.includes('?') || cleanCode.includes('code=')) {
       try {
@@ -265,16 +275,25 @@ export async function exchangeCMUCode(
       }
     }
 
-    const res = await fetch('/api/cmu-oauth/callback', {
+    const payload = JSON.stringify({
+      code: cleanCode,
+      redirectUri,
+      clientId: config.clientId,
+    });
+
+    let res = await fetch('/api/cmu-oauth/callback', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        code: cleanCode,
-        redirectUri,
-        clientId: config.clientId,
-        clientSecret: config.clientSecret,
-      }),
+      body: payload,
     });
+
+    if (!res.ok) {
+      res = await fetch('/auth/cmu/callback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payload,
+      });
+    }
 
     if (!res.ok) {
       const text = await res.text();
@@ -282,8 +301,12 @@ export async function exchangeCMUCode(
     }
 
     const data = await res.json();
-    if (data.success && data.user) {
-      return { success: true, user: data.user };
+    if (data.success && (data.user || data.cmuProfile)) {
+      const user = data.cmuProfile || data.user;
+      if (data.accessToken) {
+        storeCMUToken(data.accessToken);
+      }
+      return { success: true, user, accessToken: data.accessToken };
     }
 
     return {
@@ -296,4 +319,38 @@ export async function exchangeCMUCode(
       error: err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการเชื่อมต่อกับ CMU OAuth',
     };
   }
+}
+
+export async function directCmuBackendLogin(
+  accountName: string,
+  role: 'student' | 'admin'
+): Promise<{ success: boolean; user?: CMUUserInfo; accessToken?: string; error?: string }> {
+  try {
+    let res = await fetch('/api/auth/cmu/test-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountName, role }),
+    });
+
+    if (!res.ok) {
+      res = await fetch('/auth/cmu/test-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accountName, role }),
+      });
+    }
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success) {
+        if (data.accessToken) {
+          storeCMUToken(data.accessToken);
+        }
+        return { success: true, user: data.cmuProfile || data.user, accessToken: data.accessToken };
+      }
+    }
+  } catch {
+    // backend not available or offline
+  }
+  return { success: false };
 }

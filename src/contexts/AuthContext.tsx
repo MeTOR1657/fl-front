@@ -11,6 +11,8 @@ import {
   CMUUserInfo,
   getStoredCMUUser,
   storeCMUUser,
+  getStoredCMUToken,
+  storeCMUToken,
   isCMUStaff
 } from '../lib/cmuOAuth';
 
@@ -39,7 +41,7 @@ interface AuthContextType {
   isCmuUser: boolean;
   loading: boolean;
   signInWithGoogle: (accessToken: string) => Promise<{ success: boolean; error?: string }>;
-  signInWithCmu: (userInfo: CMUUserInfo) => void;
+  signInWithCmu: (userInfo: CMUUserInfo, token?: string) => void;
   signOut: () => Promise<void>;
   setManualUser: (email: string, name?: string) => void;
   updateUserProfile: (data: Partial<UserCustomData>) => Promise<void>;
@@ -76,13 +78,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   });
 
   useEffect(() => {
-    const savedToken = sessionStorage.getItem('google_access_token');
-    const savedUser = sessionStorage.getItem('google_user');
-    if (savedToken && savedUser) {
+    const initializeSession = async () => {
+      const hashParams = new URLSearchParams(window.location.hash.slice(1));
+      const callbackToken = hashParams.get('access_token');
+      if (callbackToken) {
+        sessionStorage.setItem('google_access_token', callbackToken);
+        window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
+      }
+      const savedToken = callbackToken || sessionStorage.getItem('google_access_token') || getStoredCMUToken();
+      if (!savedToken) {
+        setLoading(false);
+        return;
+      }
       setAccessToken(savedToken);
-      setGoogleProfile(JSON.parse(savedUser) as GoogleUserInfo);
-    }
-    setLoading(false);
+      if (sessionStorage.getItem('google_access_token')) {
+        try {
+          const response = await fetch('/auth/me', { headers: { Authorization: `Bearer ${savedToken}` } });
+          if (!response.ok) throw new Error('Session expired');
+          const { user } = await response.json();
+          const profile: GoogleUserInfo = {
+            sub: user.id,
+            email: user.email,
+            name: user.fullName,
+            picture: user.avatarUrl || undefined,
+            email_verified: true,
+          };
+          setGoogleProfile(profile);
+          sessionStorage.setItem('google_user', JSON.stringify(profile));
+          setRole(user.role === 'ADMIN' || user.role === 'STAFF' ? 'admin' : 'student');
+        } catch {
+          sessionStorage.removeItem('google_access_token');
+          sessionStorage.removeItem('google_user');
+          setAccessToken(null);
+          setGoogleProfile(null);
+        }
+      }
+      setLoading(false);
+    };
+    void initializeSession();
   }, []);
 
   const signInWithGoogle = async (token: string): Promise<{ success: boolean; error?: string }> => {
@@ -116,9 +149,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
 
-  const signInWithCmu = (userInfo: CMUUserInfo) => {
+  const signInWithCmu = (userInfo: CMUUserInfo, token?: string) => {
     setCmuUser(userInfo);
     storeCMUUser(userInfo);
+    if (token) {
+      setAccessToken(token);
+      storeCMUToken(token);
+    }
 
 
     const isAdmin = isCMUStaff(userInfo);
@@ -154,7 +191,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setManualUserInternal(null);
     setCmuUser(null);
     storeCMUUser(null);
+    storeCMUToken(null);
     localStorage.removeItem('app_manual_user');
+    localStorage.removeItem('app_jwt_token');
   };
 
   const setManualUser = (email: string, name?: string) => {

@@ -1,8 +1,7 @@
 
 
-import React, { useState } from 'react';
-import { useGoogleLogin } from '@react-oauth/google';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Building2,
   Mail,
@@ -31,6 +30,8 @@ import {
   CMUUserInfo,
   CPE_REGISTERED_REDIRECT_URIS,
   exchangeCMUCode,
+  directCmuBackendLogin,
+  storeCMUToken,
   isCMUStaff
 } from '../lib/cmuOAuth';
 
@@ -50,13 +51,51 @@ export default function LoginPage() {
   const [cmuRoleInput, setCmuRoleInput] = useState<'student' | 'admin'>('student');
   const [cmuModalTab, setCmuModalTab] = useState<'login' | 'real_oauth'>('login');
   const navigate = useNavigate();
-  const { setRole } = useRole();
-  const { signInWithGoogle, setManualUser, signInWithCmu } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { role, setRole } = useRole();
+  const { setManualUser, signInWithCmu, isAuthenticated, loading } = useAuth();
 
-  const handleDirectCmuLogin = (e?: React.FormEvent) => {
+  useEffect(() => {
+    if (loading || !isAuthenticated) return;
+    navigate(role === 'admin' ? '/dashboard' : '/tickets', { replace: true });
+  }, [isAuthenticated, loading, navigate, role]);
+
+  useEffect(() => {
+    const authError = searchParams.get('auth_error');
+    if (!authError) return;
+
+    const messages: Record<string, string> = {
+      invalid_oauth_state: 'ยืนยันความปลอดภัยกับ Google ไม่สำเร็จ กรุณาลองเข้าสู่ระบบอีกครั้ง',
+      google_sign_in_cancelled: 'ยกเลิกการเข้าสู่ระบบ Google',
+      missing_authorization_code: 'Google ไม่ได้ส่งรหัสยืนยันกลับมา กรุณาลองอีกครั้ง',
+      google_sign_in_not_configured: 'ระบบยังตั้งค่าการเข้าสู่ระบบ Google ไม่ครบ',
+      google_token_exchange_failed: 'แลกเปลี่ยนรหัสจาก Google ไม่สำเร็จ กรุณาลองอีกครั้ง',
+      invalid_google_token_response: 'ได้รับข้อมูลยืนยันจาก Google ไม่ถูกต้อง',
+      google_profile_lookup_failed: 'ดึงข้อมูลบัญชี Google ไม่สำเร็จ กรุณาลองอีกครั้ง',
+      google_profile_not_verified: 'บัญชี Google นี้ยังยืนยันอีเมลไม่สำเร็จ',
+      google_sign_in_failed: 'เข้าสู่ระบบ Google ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง',
+    };
+
+    setErrorMessage(messages[authError] || `เข้าสู่ระบบ Google ไม่สำเร็จ (${authError})`);
+    setSearchParams({}, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  const handleDirectCmuLogin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const accountName = cmuAccountInput.trim() || 'student';
     const isStaff = cmuRoleInput === 'admin' || accountName.includes('admin') || accountName === 'bimcub12345';
+
+    try {
+      const backendRes = await directCmuBackendLogin(accountName, cmuRoleInput);
+      if (backendRes?.success && backendRes.user) {
+        signInWithCmu(backendRes.user, backendRes.accessToken);
+        setShowCmuModal(false);
+        navigate(isStaff ? '/dashboard' : '/tickets');
+        return;
+      }
+    } catch {
+      // fallback
+    }
 
     const cmuUserData: CMUUserInfo = {
       cmuitaccount_name: accountName.replace('@cmu.ac.th', ''),
@@ -81,10 +120,31 @@ export default function LoginPage() {
     navigate(isStaff ? '/dashboard' : '/tickets');
   };
 
-  const handleLogin = (e?: React.FormEvent) => {
+  const handleLogin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-
     const trimmedEmail = email.trim() || 'student@cmu.ac.th';
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: trimmedEmail, password }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.accessToken && data.user) {
+          storeCMUToken(data.accessToken);
+          setManualUser(data.user.email, data.user.fullName);
+          const isAdmin = data.user.role === 'ADMIN' || data.user.role === 'STAFF';
+          setRole(isAdmin ? 'admin' : 'student');
+          navigate(isAdmin ? '/dashboard' : '/tickets');
+          return;
+        }
+      }
+    } catch {
+      // offline / mock fallback
+    }
+
     setManualUser(trimmedEmail);
 
     if (trimmedEmail === 'bimcub12345@cmu.ac.th' || trimmedEmail.includes('admin')) {
@@ -96,44 +156,56 @@ export default function LoginPage() {
     }
   };
 
-  const handleQuickAdminLogin = () => {
+  const handleQuickAdminLogin = async () => {
     setEmail('bimcub12345@cmu.ac.th');
     setPassword('123456');
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'bimcub12345@cmu.ac.th', password: '123456' }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.accessToken) {
+          storeCMUToken(data.accessToken);
+        }
+      }
+    } catch {
+      // fallback
+    }
     setManualUser('bimcub12345@cmu.ac.th');
     setRole('admin');
     navigate('/dashboard');
   };
 
-  const handleQuickStudentLogin = () => {
+  const handleQuickStudentLogin = async () => {
     setEmail('student@cmu.ac.th');
-    setPassword('student123');
+    setPassword('123456');
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'student@cmu.ac.th', password: '123456' }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.accessToken) {
+          storeCMUToken(data.accessToken);
+        }
+      }
+    } catch {
+      // fallback
+    }
     setManualUser('student@cmu.ac.th');
     setRole('student');
     navigate('/tickets');
   };
 
-  const googleLogin = useGoogleLogin({
-    onSuccess: async (tokenResponse) => {
-      try {
-        const result = await signInWithGoogle(tokenResponse.access_token);
-        if (result.success) navigate('/tickets');
-        else setErrorMessage(result.error || 'Failed to sign in with Google.');
-      } catch (err: unknown) {
-        setErrorMessage(err instanceof Error ? err.message : 'Google OAuth sign-in encountered an error.');
-      } finally {
-        setIsGoogleLoading(false);
-      }
-    },
-    onError: () => {
-      setErrorMessage('Google OAuth sign-in was cancelled or failed.');
-      setIsGoogleLoading(false);
-    },
-  });
-
   const handleGoogleLogin = () => {
     setIsGoogleLoading(true);
     setErrorMessage('');
-    googleLogin();
+    window.location.assign('/auth/google');
   };
 
   const handleCmuOAuthLogin = () => {
@@ -166,10 +238,23 @@ export default function LoginPage() {
     setTimeout(() => setCopiedRedirect(false), 2000);
   };
 
-  const handleSelectMockCmuAccount = (account: CMUUserInfo) => {
+  const handleSelectMockCmuAccount = async (account: CMUUserInfo) => {
+    const isStaff = account.itaccounttype_id === 'StaffAcc' || account.cmuitaccount.includes('admin');
+    try {
+      const backendRes = await directCmuBackendLogin(account.cmuitaccount, isStaff ? 'admin' : 'student');
+      if (backendRes?.success && backendRes.user) {
+        signInWithCmu(backendRes.user, backendRes.accessToken);
+        setShowCmuModal(false);
+        navigate(isStaff ? '/dashboard' : '/tickets');
+        return;
+      }
+    } catch {
+      // fallback
+    }
+
     signInWithCmu(account);
     setShowCmuModal(false);
-    if (account.itaccounttype_id === 'StaffAcc' || account.cmuitaccount.includes('admin')) {
+    if (isStaff) {
       navigate('/dashboard');
     } else {
       navigate('/tickets');
@@ -186,7 +271,7 @@ export default function LoginPage() {
     try {
       const res = await exchangeCMUCode(manualCodeInput, cmuConfig.redirectUri);
       if (res.success && res.user) {
-        signInWithCmu(res.user);
+        signInWithCmu(res.user, res.accessToken);
         setShowCmuModal(false);
         if (isCMUStaff(res.user)) {
           navigate('/dashboard');

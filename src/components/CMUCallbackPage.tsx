@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ShieldCheck, AlertCircle, Loader2, ArrowLeft, ArrowRight } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { MOCK_CMU_ACCOUNTS, isCMUStaff, getCMUAuthConfig, exchangeCMUCode } from '../lib/cmuOAuth';
+import { isCMUStaff, getCMUAuthConfig, exchangeCMUCode, consumeCMUOAuthState } from '../lib/cmuOAuth';
 
 export default function CMUCallbackPage() {
   const [searchParams] = useSearchParams();
@@ -21,10 +21,18 @@ export default function CMUCallbackPage() {
       const code = searchParams.get('code');
       const error = searchParams.get('error');
       const errorDescription = searchParams.get('error_description');
+      const returnedState = searchParams.get('state');
+      const expectedState = consumeCMUOAuthState();
 
       if (error) {
         setStatus('error');
         setErrorMessage(errorDescription || `OAuth Error: ${error}`);
+        return;
+      }
+
+      if (!returnedState || !expectedState || returnedState !== expectedState) {
+        setStatus('error');
+        setErrorMessage('OAuth state validation failed. Please start sign-in again.');
         return;
       }
 
@@ -40,13 +48,10 @@ export default function CMUCallbackPage() {
         const config = getCMUAuthConfig();
         const exchangeResult = await exchangeCMUCode(code, config.redirectUri);
 
-        let fetchedUser = exchangeResult.success && exchangeResult.user ? exchangeResult.user : null;
+        const fetchedUser = exchangeResult.success ? exchangeResult.user : null;
+        if (!fetchedUser) throw new Error(exchangeResult.error || 'CMU sign-in failed. Please try again.');
 
-        if (!fetchedUser) {
-          fetchedUser = MOCK_CMU_ACCOUNTS[0];
-        }
-
-        signInWithCmu(fetchedUser);
+        signInWithCmu(fetchedUser, exchangeResult.accessToken);
         setStatus('success');
 
         const isAdmin = isCMUStaff(fetchedUser);
