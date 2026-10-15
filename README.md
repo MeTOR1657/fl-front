@@ -26,7 +26,7 @@
 
 ## ติดตั้งและเริ่มระบบ
 
-ต้องมี Docker Desktop พร้อม Compose, Node.js 24 และ pnpm 11.9 สำหรับโหมดพัฒนา ให้เก็บโฟลเดอร์ `pf-front`, `pf-backend`, `pf-db` และ `pf-deploy` ไว้ระดับเดียวกัน
+ต้องมี Docker Desktop พร้อม Compose, Node.js 24 และ pnpm 11.9 สำหรับโหมดพัฒนา ให้เก็บโฟลเดอร์ `fl-front`, `pf-backend`, `pf-db` และ `pf-deploy` ไว้ระดับเดียวกัน
 
 ### วิธีแนะนำ: รันทั้งระบบด้วย Docker
 
@@ -44,7 +44,7 @@ docker compose up -d --build
 docker compose ps
 ```
 
-Compose จะเริ่ม PostgreSQL รอ health check รัน migration ของ backend แล้วเริ่ม frontend เปิด `http://localhost:6055` (มี port 3000 สำหรับ CMU callback) และตรวจสถานะฐานข้อมูลที่ `http://localhost:6055/api/health`
+Compose จะเริ่ม PostgreSQL รอ health check รัน migration ของ backend แล้วเริ่ม frontend เปิด `http://localhost:6013` และ callback ทั้งหมดใช้พอร์ต 6013 และตรวจสถานะฐานข้อมูลที่ `http://localhost:6013/api/health`
 
 ```powershell
 docker compose logs -f backend
@@ -70,10 +70,10 @@ docker compose down
    pnpm run dev
    ```
 
-3. ตั้งค่า `pf-front/.env` ให้ `VITE_BACKEND_TARGET=http://localhost:3001` และ callback CMU เป็น `http://localhost:5173/api/auth/callback` จากนั้น:
+3. ตั้งค่า `fl-front/.env` ให้ `VITE_BACKEND_TARGET=http://localhost:3001` และ callback CMU เป็น `http://localhost:5173/api/auth/callback` จากนั้น:
 
    ```powershell
-   cd ..\pf-front
+   cd ..\fl-front
    npm install
    npm run dev
    ```
@@ -89,9 +89,9 @@ docker compose down
 | `VITE_CMU_OAUTH_REDIRECT_URI` | CMU callback ต้องตรงกับ URL ที่ลงทะเบียนไว้ |
 | `DATABASE_URL` | ใช้ใน backend เท่านั้น: `localhost` เมื่อรันบนเครื่อง หรือ `db` เมื่ออยู่ใน Compose network |
 
-ตั้ง `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `CMU_OAUTH_CLIENT_ID`, `CMU_OAUTH_CLIENT_SECRET` และ `CMU_OAUTH_REDIRECT_URI` ใน `.env` ของ backend/deployment เท่านั้น ห้ามเก็บ secret หรือ `DATABASE_URL` ใน `pf-front/.env`
+ตั้ง `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `CMU_OAUTH_CLIENT_ID`, `CMU_OAUTH_CLIENT_SECRET` และ `CMU_OAUTH_REDIRECT_URI` ใน `.env` ของ backend/deployment เท่านั้น ห้ามเก็บ secret หรือ `DATABASE_URL` ใน `fl-front/.env`
 
-สำหรับ Docker ให้ Google callback ตรงกับ `http://localhost:<FRONTEND_PORT>/auth/google/callback` และลงทะเบียน URI เดียวกันใน Google Cloud Console ส่วน CMU callback ของ deployment คือ `http://localhost:3000/api/auth/callback`; callback ของ development คือ `http://localhost:5173/api/auth/callback` ทั้งสอง URL ต้องลงทะเบียนกับ CMU OAuth โหมดพัฒนาใช้ Google callback `http://localhost:3001/auth/google/callback`
+สำหรับ Docker ให้ Google callback ตรงกับ `http://localhost:<FRONTEND_PORT>/auth/google/callback` และลงทะเบียน URI เดียวกันใน Google Cloud Console ส่วน CMU callback ของ deployment คือ `http://localhost:6013/api/auth/callback`; callback ของ development คือ `http://localhost:5173/api/auth/callback` ทั้งสอง URL ต้องลงทะเบียนกับ CMU OAuth โหมดพัฒนาใช้ Google callback `http://localhost:3001/auth/google/callback`
 
 ห้าม commit ไฟล์ `.env` หรือเปิดเผยค่า Client Secret ใน repository สาธารณะ
 

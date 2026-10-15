@@ -27,7 +27,7 @@ export interface CMUAuthConfig {
 export const DEFAULT_CMU_CLIENT_ID = 'MWM9PxVFyADkwn6pTSxbKlVbw4Fq7me2xzOGLqW4';
 
 export const CPE_REGISTERED_REDIRECT_URIS = [
-  { group: 'localhost', label: 'Localhost (3000) - /api/auth/callback (แนะนำสำหรับ Docker)', url: 'http://localhost:3000/api/auth/callback' },
+  { group: 'localhost', label: 'Localhost (6013) - /api/auth/callback (แนะนำสำหรับ Docker)', url: 'http://localhost:6013/api/auth/callback' },
   { group: 'localhost', label: 'Localhost (5173) - /api/auth/callback (แนะนำสำหรับ Dev)', url: 'http://localhost:5173/api/auth/callback' },
   { group: 'localhost', label: 'Localhost (3000) - /callback', url: 'http://localhost:3000/callback' },
   { group: 'localhost', label: 'Localhost (5173) - /callback', url: 'http://localhost:5173/callback' },
